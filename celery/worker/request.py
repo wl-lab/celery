@@ -404,6 +404,7 @@ class Request(object):
         return {
             'id': self.id,
             'name': self.name,
+            'headers': self.request_dict,
             'args': self.argsrepr,
             'kwargs': self.kwargsrepr,
             'type': self.type,
