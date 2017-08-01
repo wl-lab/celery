@@ -113,6 +113,7 @@ class Request(object):
         self.id = headers['id']
         type = self.type = self.name = headers['task']
         self.root_id = headers.get('root_id')
+        self.source_id = headers.get('source_id')
         self.parent_id = headers.get('parent_id')
         if 'shadow' in headers:
             self.name = headers['shadow'] or self.name

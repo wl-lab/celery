@@ -252,7 +252,7 @@ class Signature(dict):
     partial = clone
 
     def freeze(self, _id=None, group_id=None, chord=None,
-               root_id=None, parent_id=None):
+               root_id=None, parent_id=None, source_id=None):
         """Finalize the signature by adding a concrete task id.
 
         The task won't be called and you shouldn't call the signature
@@ -279,6 +279,8 @@ class Signature(dict):
             opts['group_id'] = group_id
         if chord:
             opts['chord'] = chord
+        if source_id:
+            opts['source_id'] = source_id
         # pylint: disable=too-many-function-args
         #   Borks on this, as it's a property.
         return self.AsyncResult(tid)
@@ -509,6 +511,7 @@ class Signature(dict):
     id = getitem_property('options.task_id', 'Task UUID')
     parent_id = getitem_property('options.parent_id', 'Task parent UUID.')
     root_id = getitem_property('options.root_id', 'Task root UUID.')
+    source_id = getitem_property('options.source_id', 'Task source UUID.')
     task = getitem_property('task', 'Name of task.')
     args = getitem_property('args', 'Positional arguments to task.')
     kwargs = getitem_property('kwargs', 'Keyword arguments to task.')
@@ -567,7 +570,8 @@ class _chain(Signature):
 
     def run(self, args=(), kwargs={}, group_id=None, chord=None,
             task_id=None, link=None, link_error=None, publisher=None,
-            producer=None, root_id=None, parent_id=None, app=None, **options):
+            producer=None, root_id=None, parent_id=None, app=None, source_id=None, **options):
+
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         app = app or self.app
@@ -582,7 +586,7 @@ class _chain(Signature):
         else:
             tasks, results = self.prepare_steps(
                 args, self.tasks, root_id, parent_id, link_error, app,
-                task_id, group_id, chord,
+                task_id, group_id, chord, source_id=source_id,
             )
 
         if results:
@@ -597,19 +601,19 @@ class _chain(Signature):
             return results[0]
 
     def freeze(self, _id=None, group_id=None, chord=None,
-               root_id=None, parent_id=None):
+               root_id=None, parent_id=None, source_id=None):
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         _, results = self._frozen = self.prepare_steps(
             self.args, self.tasks, root_id, parent_id, None,
-            self.app, _id, group_id, chord, clone=False,
+            self.app, _id, group_id, chord, clone=False, source_id=source_id
         )
         return results[0]
 
     def prepare_steps(self, args, tasks,
                       root_id=None, parent_id=None, link_error=None, app=None,
                       last_task_id=None, group_id=None, chord_body=None,
-                      clone=True, from_dict=Signature.from_dict):
+                      clone=True, from_dict=Signature.from_dict, source_id=None):
         app = app or self.app
         # use chain message field for protocol 2 and later.
         # this avoids pickle blowing the stack on the recursion
@@ -673,9 +677,10 @@ class _chain(Signature):
                 res = task.freeze(
                     last_task_id,
                     root_id=root_id, group_id=group_id, chord=chord_body,
+                    source_id=source_id
                 )
             else:
-                res = task.freeze(root_id=root_id)
+                res = task.freeze(root_id=root_id, source_id=source_id)
 
             i += 1
 
@@ -979,8 +984,8 @@ class group(Signature):
         if not self.tasks:
             return self.freeze()
 
-        options, group_id, root_id = self._freeze_gid(options)
-        tasks = self._prepared(self.tasks, [], group_id, root_id, app)
+        options, group_id, root_id, source_id = self._freeze_gid(options)
+        tasks = self._prepared(self.tasks, [], group_id, root_id, source_id, app)
         p = barrier()
         results = list(self._apply_tasks(tasks, producer, app, p,
                                          args=args, kwargs=kwargs, **options))
@@ -1005,8 +1010,8 @@ class group(Signature):
         app = self.app
         if not self.tasks:
             return self.freeze()  # empty group returns GroupResult
-        options, group_id, root_id = self._freeze_gid(options)
-        tasks = self._prepared(self.tasks, [], group_id, root_id, app)
+        options, group_id, root_id, source_id = self._freeze_gid(options)
+        tasks = self._prepared(self.tasks, [], group_id, root_id, source_id, app)
         return app.GroupResult(group_id, [
             sig.apply(args=args, kwargs=kwargs, **options) for sig, _ in tasks
         ])
@@ -1024,7 +1029,7 @@ class group(Signature):
         sig = sig.clone().set(immutable=True)
         return self.tasks[0].link_error(sig)
 
-    def _prepared(self, tasks, partial_args, group_id, root_id, app,
+    def _prepared(self, tasks, partial_args, group_id, root_id, source_id, app,
                   CallableSignature=abstract.CallableSignature,
                   from_dict=Signature.from_dict,
                   isinstance=isinstance, tuple=tuple):
@@ -1039,14 +1044,14 @@ class group(Signature):
             if isinstance(task, group):
                 # needs yield_from :(
                 unroll = task._prepared(
-                    task.tasks, partial_args, group_id, root_id, app,
+                    task.tasks, partial_args, group_id, root_id, source_id, app,
                 )
                 for taskN, resN in unroll:
                     yield taskN, resN
             else:
                 if partial_args and not task.immutable:
                     task.args = tuple(partial_args) + tuple(task.args)
-                yield task, task.freeze(group_id=group_id, root_id=root_id)
+                yield task, task.freeze(group_id=group_id, root_id=root_id, source_id=source_id)
 
     def _apply_tasks(self, tasks, producer=None, app=None, p=None,
                      add_to_parent=None, chord=None,
@@ -1078,10 +1083,10 @@ class group(Signature):
         options = dict(self.options, **options)
         options['group_id'] = group_id = (
             options.pop('task_id', uuid()))
-        return options, group_id, options.get('root_id')
+        return options, group_id, options.get('root_id'), options.get('source_id')
 
     def freeze(self, _id=None, group_id=None, chord=None,
-               root_id=None, parent_id=None):
+               root_id=None, parent_id=None, source_id=None):
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         opts = self.options
@@ -1095,11 +1100,12 @@ class group(Signature):
             opts['chord'] = chord
         root_id = opts.setdefault('root_id', root_id)
         parent_id = opts.setdefault('parent_id', parent_id)
+        source_id = opts.setdefault('source_id', source_id)
         new_tasks = []
         # Need to unroll subgroups early so that chord gets the
         # right result instance for chord_unlock etc.
         results = list(self._freeze_unroll(
-            new_tasks, group_id, chord, root_id, parent_id,
+            new_tasks, group_id, chord, root_id, parent_id, source_id
         ))
         if isinstance(self.tasks, MutableSequence):
             self.tasks[:] = new_tasks
@@ -1108,7 +1114,7 @@ class group(Signature):
         return self.app.GroupResult(gid, results)
     _freeze = freeze
 
-    def _freeze_unroll(self, new_tasks, group_id, chord, root_id, parent_id):
+    def _freeze_unroll(self, new_tasks, group_id, chord, root_id, parent_id, source_id):
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         stack = deque(self.tasks)
@@ -1120,7 +1126,7 @@ class group(Signature):
                 new_tasks.append(task)
                 yield task.freeze(group_id=group_id,
                                   chord=chord, root_id=root_id,
-                                  parent_id=parent_id)
+                                  parent_id=parent_id, source_id=source_id)
 
     def __repr__(self):
         if self.tasks:
@@ -1196,14 +1202,14 @@ class chord(Signature):
         return self.apply_async((), {'body': body} if body else {}, **options)
 
     def freeze(self, _id=None, group_id=None, chord=None,
-               root_id=None, parent_id=None):
+               root_id=None, parent_id=None, source_id=None):
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         if not isinstance(self.tasks, group):
             self.tasks = group(self.tasks, app=self.app)
         header_result = self.tasks.freeze(
-            parent_id=parent_id, root_id=root_id, chord=self.body)
-        bodyres = self.body.freeze(_id, root_id=root_id)
+            parent_id=parent_id, root_id=root_id, chord=self.body, source_id=source_id)
+        bodyres = self.body.freeze(_id, root_id=root_id, source_id=source_id)
         # we need to link the body result back to the group result,
         # but the body may actually be a chain,
         # so find the first result without a parent
@@ -1271,6 +1277,7 @@ class chord(Signature):
         app = app or self._get_app(body)
         group_id = header.options.get('task_id') or uuid()
         root_id = body.options.get('root_id')
+        source_id = body.options.get('source_id')
         body.chord_size = self.__length_hint__()
         options = dict(self.options, **options) if options else self.options
         if options:
@@ -1278,8 +1285,8 @@ class chord(Signature):
             body.options.update(options)
 
         results = header.freeze(
-            group_id=group_id, chord=body, root_id=root_id).results
-        bodyres = body.freeze(task_id, root_id=root_id)
+            group_id=group_id, chord=body, root_id=root_id, source_id=source_id).results
+        bodyres = body.freeze(task_id, root_id=root_id, source_id=source_id)
 
         # Chains should not be passed to the header tasks. See #3771
         options.pop('chain', None)
