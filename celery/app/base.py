@@ -680,7 +680,7 @@ class Celery(object):
                   publisher=None, link=None, link_error=None,
                   add_to_parent=True, group_id=None, retries=0, chord=None,
                   reply_to=None, time_limit=None, soft_time_limit=None,
-                  root_id=None, parent_id=None, route_name=None,
+                  root_id=None, parent_id=None, source_id=None, route_name=None,
                   shadow=None, chain=None, task_type=None, **options):
         """Send task by name.
 
@@ -703,13 +703,15 @@ class Celery(object):
         options = router.route(
             options, route_name or name, args, kwargs, task_type)
 
-        if not root_id or not parent_id:
+        if not root_id or not parent_id or not source_id:
             parent = self.current_worker_task
             if parent:
                 if not root_id:
                     root_id = parent.request.root_id or parent.request.id
                 if not parent_id:
                     parent_id = parent.request.id
+                if not source_id:
+                    source_id = parent.request.source_id
 
         message = amqp.create_task_message(
             task_id, name, args, kwargs, countdown, eta, group_id,
@@ -717,7 +719,7 @@ class Celery(object):
             maybe_list(link), maybe_list(link_error),
             reply_to or self.oid, time_limit, soft_time_limit,
             self.conf.task_send_sent_event,
-            root_id, parent_id, shadow, chain,
+            root_id, parent_id, shadow, chain, source_id=source_id,
         )
 
         if connection:

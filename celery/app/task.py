@@ -114,6 +114,7 @@ class Context(object):
         return {
             'task_id': self.id,
             'root_id': self.root_id,
+            'source_id': self.source_id,
             'parent_id': self.parent_id,
             'group_id': self.group,
             'chord': self.chord,
