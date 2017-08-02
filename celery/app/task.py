@@ -81,6 +81,7 @@ class Context(object):
     reply_to = None
     root_id = None
     parent_id = None
+    source_id = None
     correlation_id = None
     taskset = None   # compat alias to group
     group = None
@@ -97,6 +98,11 @@ class Context(object):
 
     def __init__(self, *args, **kwargs):
         self.update(*args, **kwargs)
+        if self.headers is not None:
+            if 'root_id' in self.headers and not self.root_id:
+                self.root_id = self.headers['root_id']
+            if 'source_id' in self.headers and not self.source_id:
+                self.source_id = self.headers['source_id']
 
     def update(self, *args, **kwargs):
         return self.__dict__.update(*args, **kwargs)
@@ -530,6 +536,7 @@ class Task(object):
 
         preopts = self._get_exec_options()
         options = dict(preopts, **options) if options else preopts
+
         return app.send_task(
             self.name, args, kwargs, task_id=task_id, producer=producer,
             link=link, link_error=link_error, result_cls=self.AsyncResult,
