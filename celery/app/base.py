@@ -723,7 +723,8 @@ class Celery(object):
                     source_id = parent.request.source_id
 
                     # GLaDOS: Redirect to source queue
-                    options['queue'] = "source-%s" % source_id
+                    if source_id:
+                        options['queue'] = "source-%s" % source_id
 
         message = amqp.create_task_message(
             task_id, name, args, kwargs, countdown, eta, group_id,
