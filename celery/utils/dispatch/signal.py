@@ -203,19 +203,52 @@ class Signal(object):  # pragma: no cover
         return bool(self._live_receivers(sender))
 
     def send(self, sender, **named):
-        """Send signal from sender to all connected receivers.
+        """
+        Send signal from sender to all connected receivers.
 
-        If any receiver raises an error, the error propagates back through
-        send, terminating the dispatch loop, so it is quite possible to not
-        have all receivers called if a raises an error.
+        If any receiver raises an error, the error propagates back through send,
+        terminating the dispatch loop. So it's possible that all receivers
+        won't be called if an error is raised.
 
         Arguments:
-            sender (Any): The sender of the signal.
-                Either a specific object or :const:`None`.
-            **named (Any): Named arguments which will be passed to receivers.
 
-        Returns:
-            List: of tuple pairs: `[(receiver, response), … ]`.
+            sender
+                The sender of the signal. Either a specific object or None.
+
+            named
+                Named arguments which will be passed to receivers.
+
+        Return a list of tuple pairs [(receiver, response), ... ].
+        """
+        if not self.receivers or \
+                self.sender_receivers_cache.get(sender) is NO_RECEIVERS:
+            return []
+
+        return [
+            (receiver, receiver(signal=self, sender=sender, **named))
+            for receiver in self._live_receivers(sender)
+        ]
+
+    def send_robust(self, sender, **named):
+        """
+        Send signal from sender to all connected receivers catching errors.
+
+        Arguments:
+
+            sender
+                The sender of the signal. Can be any python object (normally one
+                registered with a connect if you actually want something to
+                occur).
+
+            named
+                Named arguments which will be passed to receivers. These
+                arguments must be a subset of the argument names defined in
+                providing_args.
+
+        Return a list of tuple pairs [(receiver, response), ... ].
+
+        If any receiver raises an error (specifically any subclass of
+        Exception), return the error instance as the result for that receiver.
         """
         responses = []
         if not self.receivers or \
