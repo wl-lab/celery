@@ -270,7 +270,6 @@ class Signal(object):  # pragma: no cover
             else:
                 responses.append((receiver, response))
         return responses
-    send_robust = send  # Compat with Django interface.
 
     def _clear_dead_receivers(self):
         # Warning: caller is assumed to hold self.lock
