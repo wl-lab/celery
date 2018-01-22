@@ -476,6 +476,9 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                                          exc_info=True)
         except MemoryError:
             raise
+        except Ignore as exc:
+            I, R = Info(IGNORED, exc), ExceptionInfo(internal=True)
+            I.handle_ignore(task, task_request)
         except Exception as exc:
             if eager:
                 raise
