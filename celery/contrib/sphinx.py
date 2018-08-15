@@ -49,13 +49,29 @@ class TaskDocumenter(FunctionDocumenter):
     def can_document_member(cls, member, membername, isattr, parent):
         return isinstance(member, BaseTask) and getattr(member, '__wrapped__')
 
+    def check_module(self):
+        # Normally checks if *self.object* is really defined in the module
+        # given by *self.modname*. But since functions decorated with the @task
+        # decorator are instances living in the celery.local, we have to check
+        # the wrapped function instead.
+        modname = self.get_attr(self.object, '__module__', None)
+        if modname and modname == 'celery.local':
+            wrapped = getattr(self.object, '__wrapped__', None)
+            if wrapped and getattr(wrapped, '__module__') == self.modname:
+                return True
+
+        return super(TaskDocumenter, self).check_module()
+
     def format_args(self):
         wrapped = getattr(self.object, '__wrapped__', None)
         if wrapped is not None:
             argspec = getfullargspec(wrapped)
+            if argspec[0] and argspec[0][0] in ('cls', 'self'):
+                del argspec[0][0]
             fmt = formatargspec(*argspec)
             fmt = fmt.replace('\\', '\\\\')
             return fmt
+
         return ''
 
     def document_members(self, all_members=False):
@@ -68,6 +84,19 @@ class TaskDirective(PyModulelevel):
     def get_signature_prefix(self, sig):
         return self.env.config.celery_task_prefix
 
+
+def autodoc_skip_member_handler(app, what, name, obj, skip, options):
+    """Handler for autodoc-skip-member event."""
+    # Celery tasks created with the @task decorator have the property
+    # that *obj.__doc__* and *obj.__class__.__doc__* are equal, which
+    # trips up the logic in sphinx.ext.autodoc that is supposed to
+    # suppress repetition of class documentation in an instance of the
+    # class. This overrides that behavior.
+    if isinstance(obj, BaseTask) and getattr(obj, '__wrapped__'):
+        if skip and isinstance(obj, PromiseProxy):
+            return False
+
+    return None
 
 def setup(app):
     """Setup Sphinx extension."""
