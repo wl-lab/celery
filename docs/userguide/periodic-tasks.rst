@@ -36,7 +36,7 @@ An example time zone could be `Europe/London`:
 
     timezone = 'Europe/London'
 
-This setting must be added to your app, either by configuration it directly
+This setting must be added to your app, either by configuring it directly
 using (``app.conf.timezone = 'Europe/London'``), or by adding
 it to your configuration module if you have set one up using
 ``app.config_from_object``. See :ref:`celerytut-configuration` for
@@ -64,6 +64,14 @@ schedule manually.
 
         $ python manage.py shell
         >>> from djcelery.models import PeriodicTask
+        >>> PeriodicTask.objects.update(last_run_at=None)
+
+    Django-Celery only supports Celery 4.0 and below, for Celery 4.0 and above, do as follow:
+
+    .. code-block:: console
+
+        $ python manage.py shell
+        >>> from django_celery_beat.models import PeriodicTask
         >>> PeriodicTask.objects.update(last_run_at=None)
 
 .. _beat-entries:
@@ -265,8 +273,8 @@ Some examples:
 | ``crontab(0, 0, day_of_month='11',``    | Execute on the eleventh of May every year. |
 |          ``month_of_year='5')``         |                                            |
 +-----------------------------------------+--------------------------------------------+
-| ``crontab(0, 0,``                       | Execute on the first month of every        |
-|         ``month_of_year='*/3')``        | quarter.                                   |
+| ``crontab(0, 0,``                       | Execute every day on the first month     |
+|         ``month_of_year='*/3')``        | of every quarter.                          |
 +-----------------------------------------+--------------------------------------------+
 
 See :class:`celery.schedules.crontab` for more documentation.

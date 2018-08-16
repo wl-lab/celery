@@ -387,6 +387,7 @@ This command will modify your module in-place to use the new lower-case
 names (if you want uppercase with a "``CELERY``" prefix see block below),
 and save a backup in :file:`proj/settings.py.orig`.
 
+.. _latentcall-django-admonition:
 .. admonition:: For Django users and others who want to keep uppercase names
 
     If you're loading Celery configuration from the Django settings module
@@ -1056,7 +1057,7 @@ Contributed by **Ionel Cristian Mărieș**.
 Handling task connection errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Connection related errors occuring while sending a task is now re-raised
+Connection related errors occurring while sending a task is now re-raised
 as a :exc:`kombu.exceptions.OperationalError` error:
 
 .. code-block:: pycon

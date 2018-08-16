@@ -234,7 +234,7 @@ Queues can be configured to support priorities by setting the
 
     app.conf.task_queues = [
         Queue('tasks', Exchange('tasks'), routing_key='tasks',
-              queue_arguments={'x-max-priority': 10},
+              queue_arguments={'x-max-priority': 10}),
     ]
 
 A default value for all queues can be set using the
@@ -373,7 +373,7 @@ Related API commands
     :keyword durable: Durable exchanges are persistent (i.e., they survive
         a broker restart).
 
-    :keyword auto_delete: This means the queue will be deleted by the broker
+    :keyword auto_delete: This means the exchange will be deleted by the broker
         when there are no more queues using it.
 
 

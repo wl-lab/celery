@@ -47,8 +47,13 @@ names, are the renaming of some prefixes, like ``celerybeat_`` to ``beat_``,
 ``celeryd_`` to ``worker_``, and most of the top level ``celery_`` settings
 have been moved into a new  ``task_`` prefix.
 
-Celery will still be able to read old configuration files, so there's no
-rush in moving to the new settings format.
+.. note::
+
+    Celery will still be able to read old configuration files, so
+    there's no rush in moving to the new settings format. Furthermore,
+    we provide the ``celery upgrade`` command that should handle plenty
+    of cases (including :ref:`Django <latentcall-django-admonition>`).
+
 
 =====================================  ==============================================
 **Setting name**                       **Replace with**
@@ -83,6 +88,7 @@ rush in moving to the new settings format.
 ``CASSANDRA_READ_CONSISTENCY``         :setting:`cassandra_read_consistency`
 ``CASSANDRA_SERVERS``                  :setting:`cassandra_servers`
 ``CASSANDRA_WRITE_CONSISTENCY``        :setting:`cassandra_write_consistency`
+``CASSANDRA_OPTIONS``                  :setting:`cassandra_options`
 ``CELERY_COUCHBASE_BACKEND_SETTINGS``  :setting:`couchbase_backend_settings`
 ``CELERY_MONGODB_BACKEND_SETTINGS``    :setting:`mongodb_backend_settings`
 ``CELERY_EVENT_QUEUE_EXPIRES``         :setting:`event_queue_expires`
@@ -109,7 +115,7 @@ rush in moving to the new settings format.
 ``CELERY_SECURITY_CERTIFICATE``        :setting:`security_certificate`
 ``CELERY_SECURITY_CERT_STORE``         :setting:`security_cert_store`
 ``CELERY_SECURITY_KEY``                :setting:`security_key`
-``CELERY_TASK_ACKS_LATE``              :setting:`task_acks_late`
+``CELERY_ACKS_LATE``                   :setting:`task_acks_late`
 ``CELERY_TASK_ALWAYS_EAGER``           :setting:`task_always_eager`
 ``CELERY_TASK_ANNOTATIONS``            :setting:`task_annotations`
 ``CELERY_TASK_COMPRESSION``            :setting:`task_compression`
@@ -124,8 +130,8 @@ rush in moving to the new settings format.
 ``CELERY_TASK_IGNORE_RESULT``          :setting:`task_ignore_result`
 ``CELERY_TASK_PUBLISH_RETRY``          :setting:`task_publish_retry`
 ``CELERY_TASK_PUBLISH_RETRY_POLICY``   :setting:`task_publish_retry_policy`
-``CELERY_TASK_QUEUES``                 :setting:`task_queues`
-``CELERY_TASK_ROUTES``                 :setting:`task_routes`
+``CELERY_QUEUES``                      :setting:`task_queues`
+``CELERY_ROUTES``                      :setting:`task_routes`
 ``CELERY_TASK_SEND_SENT_EVENT``        :setting:`task_send_sent_event`
 ``CELERY_TASK_SERIALIZER``             :setting:`task_serializer`
 ``CELERYD_TASK_SOFT_TIME_LIMIT``       :setting:`task_soft_time_limit`
@@ -176,8 +182,9 @@ A white-list of content-types/serializers to allow.
 If a message is received that's not in this list then
 the message will be discarded with an error.
 
-By default any content type is enabled, including pickle and yaml,
-so make sure untrusted parties don't have access to your broker.
+By default only json is enabled but any content type can be added,
+including pickle and yaml; when this is the case make sure
+untrusted parties don't have access to your broker.
 See :ref:`guide-security` for more.
 
 Example::
@@ -221,7 +228,7 @@ The timezone value can be any time zone supported by the :pypi:`pytz`
 library.
 
 If not set the UTC timezone is used. For backwards compatibility
-there's also a :setting:`enable_utc` setting, and this is set
+there's also a :setting:`enable_utc` setting, and when this is set
 to false the system local timezone is used instead.
 
 .. _conf-tasks:
@@ -592,6 +599,27 @@ Can be one of the following:
 .. _`Couchbase`: https://www.couchbase.com/
 .. _`Consul`: https://consul.io/
 
+
+.. setting:: result_backend_transport_options
+
+``result_backend_transport_options``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Default: ``{}`` (empty mapping).
+
+A dict of additional options passed to the underlying transport.
+
+See your transport user manual for supported options (if any).
+
+Example setting the visibility timeout (supported by Redis and SQS
+transports):
+
+.. code-block:: python
+
+    result_backend_transport_options = {'visibility_timeout': 18000}  # 5 hours
+
+
+
 .. setting:: result_serializer
 
 ``result_serializer``
@@ -847,9 +875,12 @@ Configuring the backend URL
     requirements.
 
 This backend requires the :setting:`result_backend`
-setting to be set to a Redis URL::
+setting to be set to a Redis or `Redis over TLS`_ URL::
 
     result_backend = 'redis://:password@host:port/db'
+
+.. _`Redis over TLS`:
+    https://www.iana.org/assignments/uri-schemes/prov/rediss
 
 For example::
 
@@ -858,6 +889,10 @@ For example::
 is the same as::
 
     result_backend = 'redis://'
+
+Use the ``rediss://`` protocol to connect to redis over TLS::
+
+    result_backend = 'rediss://:password@host:port/db?ssl_cert_reqs=CERT_REQUIRED'
 
 The fields of the URL are defined as follows:
 
@@ -877,6 +912,17 @@ The fields of the URL are defined as follows:
 
     Database number to use. Default is 0.
     The db can include an optional leading slash.
+
+When using a TLS connection (protocol is ``rediss://``), you may pass in all values in :setting:`broker_use_ssl` as query parameters. Paths to certificates must be URL encoded, and ``ssl_cert_reqs`` is required. Example:
+
+.. code-block:: python
+
+    result_backend = 'rediss://:password@host:port/db?\
+        ssl_cert_reqs=CERT_REQUIRED\
+        &ssl_ca_certs=%2Fvar%2Fssl%2Fmyca.pem\                  # /var/ssl/myca.pem
+        &ssl_certfile=%2Fvar%2Fssl%2Fredis-server-cert.pem\     # /var/ssl/redis-server-cert.pem
+        &ssl_keyfile=%2Fvar%2Fssl%2Fprivate%2Fworker-key.pem'   # /var/ssl/private/worker-key.pem
+
 
 .. setting:: redis_backend_use_ssl
 
@@ -1036,6 +1082,22 @@ Named arguments to pass into the authentication provider. For example:
     cassandra_auth_kwargs = {
         username: 'cassandra',
         password: 'cassandra'
+    }
+
+.. setting:: cassandra_options
+
+``cassandra_options``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Default: ``{}`` (empty mapping).
+
+Named arguments to pass into the ``cassandra.cluster`` class.
+
+.. code-block:: python
+
+    cassandra_options = {
+        'cql_version': '3.2.1'
+        'protocol_version': 3
     }
 
 Example configuration
@@ -1202,9 +1264,14 @@ or using the `downloadable version <https://docs.aws.amazon.com/amazondynamodb/l
 of DynamoDB
 `locally <https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.Endpoint.html>`_::
 
-    result_backend = 'dynamodb://@localhost:8000
+    result_backend = 'dynamodb://@localhost:8000'
 
-The fields of the URL are defined as follows:
+or using downloadable version or other service with conforming API deployed on any host::
+
+    result_backend = 'dynamodb://@us-east-1'
+    dynamodb_endpoint_url = 'http://192.168.0.40:8000'
+
+The fields of the DynamoDB URL in ``result_backend`` are defined as follows:
 
 #. ``aws_access_key_id & aws_secret_access_key``
 
@@ -1881,6 +1948,13 @@ The default timeout in seconds before we give up establishing a connection
 to the AMQP server. This setting is disabled when using
 gevent.
 
+.. note::
+
+    The broker connection timeout only applies to a worker attempting to
+    connect to the broker. It does not apply to producer sending a task, see
+    :setting:`broker_transport_options` for how to provide a timeout for that
+    situation.
+
 .. setting:: broker_connection_retry
 
 ``broker_connection_retry``
@@ -2393,7 +2467,7 @@ Name of the consumer class used by the worker.
 ``worker_timer``
 ~~~~~~~~~~~~~~~~
 
-Default: ``"kombu.async.hub.timer:Timer"``.
+Default: ``"kombu.asynchronous.hub.timer:Timer"``.
 
 Name of the ETA scheduler class used by the worker.
 Default is or set by the pool implementation.
