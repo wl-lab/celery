@@ -539,7 +539,8 @@ class Task(object):
 
         preopts = self._get_exec_options()
         options = dict(preopts, **options) if options else preopts
-        options.setdefault('priority', self.priority)
+        if self.priority:
+            options.setdefault('priority', self.priority)
         return app.send_task(
             self.name, args, kwargs, task_id=task_id, producer=producer,
             link=link, link_error=link_error, result_cls=self.AsyncResult,
