@@ -594,7 +594,7 @@ class _chain(Signature):
 
     def freeze(self, _id=None, group_id=None, chord=None,
                root_id=None, parent_id=None, source_id=None,
-               anchor_id=anchor_id):
+               anchor_id=None):
         # pylint: disable=redefined-outer-name
         #   XXX chord is also a class in outer scope.
         _, results = self._frozen = self.prepare_steps(
@@ -1088,7 +1088,7 @@ class group(Signature):
         options = dict(self.options, **options)
         options['group_id'] = group_id = (
             options.pop('task_id', uuid()))
-        return options, group_id, options.get('root_id'),
+        return options, group_id, options.get('root_id'), \
             options.get('source_id'), options.get('anchor_id')
 
     def freeze(self, _id=None, group_id=None, chord=None,
