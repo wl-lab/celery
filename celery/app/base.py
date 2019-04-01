@@ -692,7 +692,8 @@ class Celery(object):
                   add_to_parent=True, group_id=None, retries=0, chord=None,
                   reply_to=None, time_limit=None, soft_time_limit=None,
                   root_id=None, parent_id=None, source_id=None, route_name=None,
-                  shadow=None, chain=None, task_type=None, **options):
+                  anchor_id=None, shadow=None, chain=None, task_type=None,
+                  **options):
         """Send task by name.
 
         Supports the same arguments as :meth:`@-Task.apply_async`.
@@ -716,7 +717,7 @@ class Celery(object):
         options = router.route(
             options, route_name or name, args, kwargs, task_type)
 
-        if not root_id or not parent_id or not source_id:
+        if not root_id or not parent_id or not source_id or not anchor_id:
             parent = self.current_worker_task
             if parent:
                 if not root_id:
@@ -725,6 +726,8 @@ class Celery(object):
                     parent_id = parent.request.id
                 if not source_id:
                     source_id = parent.request.source_id
+                if not anchor_id:
+                    anchor_id = parent.request.anchor_id
 
         # GLaDOS: Redirect to source queue
         if source_id:
@@ -737,6 +740,7 @@ class Celery(object):
             reply_to or self.oid, time_limit, soft_time_limit,
             self.conf.task_send_sent_event,
             root_id, parent_id, shadow, chain, source_id=source_id,
+            anchor_id=anchor_id,
             argsrepr=options.get('argsrepr'),
             kwargsrepr=options.get('kwargsrepr'),
         )
