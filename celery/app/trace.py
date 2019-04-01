@@ -358,6 +358,7 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                                    called_directly=False, kwargs=kwargs)
             root_id = task_request.root_id or uuid
             source_id = task_request.source_id
+            anchor_id = task.request.anchor_id
             push_request(task_request)
             try:
                 # -*- PRE -*-
@@ -412,16 +413,22 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                                 for group_ in groups:
                                     group_.apply_async(
                                         (retval,),
-                                        parent_id=uuid, root_id=root_id, source_id=source_id,
+                                        parent_id=uuid, root_id=root_id,
+                                        source_id=source_id,
+                                        anchor_id=anchor_id
                                     )
                                 if sigs:
                                     group(sigs, app=app).apply_async(
                                         (retval,),
-                                        parent_id=uuid, root_id=root_id, source_id=source_id,
+                                        parent_id=uuid, root_id=root_id,
+                                        source_id=source_id,
+                                        anchor_id=anchor_id
                                     )
                             else:
                                 signature(callbacks[0], app=app).apply_async(
-                                    (retval,), parent_id=uuid, root_id=root_id, source_id=source_id,
+                                    (retval,), parent_id=uuid,
+                                    root_id=root_id, source_id=source_id,
+                                    anchor_id=anchor_id
                                 )
 
                         # execute first task in chain
@@ -430,7 +437,8 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                             _chsig = signature(chain.pop(), app=app)
                             _chsig.apply_async(
                                 (retval,), chain=chain,
-                                parent_id=uuid, root_id=root_id, source_id=source_id,
+                                parent_id=uuid, root_id=root_id,
+                                source_id=source_id, anchor_id=anchor_id
                             )
                         mark_as_done(
                             uuid, retval, task_request, publish_result,

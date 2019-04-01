@@ -307,7 +307,8 @@ class AMQP(object):
                    time_limit=None, soft_time_limit=None,
                    create_sent_event=False, root_id=None, parent_id=None,
                    shadow=None, chain=None, now=None, timezone=None,
-                   origin=None, argsrepr=None, kwargsrepr=None, source_id=None):
+                   origin=None, argsrepr=None, kwargsrepr=None,
+                   source_id=None, anchor_id=None):
         args = args or ()
         kwargs = kwargs or {}
         if not isinstance(args, (list, tuple)):
@@ -361,6 +362,7 @@ class AMQP(object):
                 'timelimit': [time_limit, soft_time_limit],
                 'root_id': root_id,
                 'source_id': source_id,
+                'anchor_id': anchor_id,
                 'parent_id': parent_id,
                 'argsrepr': argsrepr,
                 'kwargsrepr': kwargsrepr,
@@ -382,6 +384,7 @@ class AMQP(object):
                 'uuid': task_id,
                 'root_id': root_id,
                 'source_id': source_id,
+                'anchor_id': anchor_id,
                 'parent_id': parent_id,
                 'name': name,
                 'args': argsrepr,
