@@ -1020,7 +1020,7 @@ class group(Signature):
         app = self.app
         if not self.tasks:
             return self.freeze()  # empty group returns GroupResult
-        options, group_id, root_id, source_id = self._freeze_gid(options)
+        options, group_id, root_id, source_id, anchor_id = self._freeze_gid(options)
         tasks = self._prepared(self.tasks, [], group_id, root_id, source_id,
                 anchor_id, app)
         return app.GroupResult(group_id, [

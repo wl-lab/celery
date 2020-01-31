@@ -173,7 +173,8 @@ class test_trace(TraceCase):
         maybe_signature.return_value = sig
         retval, _ = self.trace(self.add, (2, 2), {}, request=request)
         sig.apply_async.assert_called_with(
-            (4,), parent_id='id-1', root_id='root',
+            (4,), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None,
         )
 
     @patch('celery.canvas.maybe_signature')
@@ -184,7 +185,8 @@ class test_trace(TraceCase):
         maybe_signature.return_value = sig
         retval, _ = self.trace(self.add, (2, 2), {}, request=request)
         sig.apply_async.assert_called_with(
-            (4, ), parent_id='id-1', root_id='root',
+            (4, ), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None,
             chain=[sig2],
         )
 
@@ -211,10 +213,12 @@ class test_trace(TraceCase):
         maybe_signature.side_effect = passt
         retval, _ = self.trace(self.add, (2, 2), {}, request=request)
         group_.assert_called_with(
-            (4,), parent_id='id-1', root_id='root',
+            (4,), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None
         )
         sig3.apply_async.assert_called_with(
-            (4,), parent_id='id-1', root_id='root',
+            (4,), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None
         )
 
     @patch('celery.canvas.maybe_signature')
@@ -231,10 +235,12 @@ class test_trace(TraceCase):
         maybe_signature.side_effect = passt
         retval, _ = self.trace(self.add, (2, 2), {}, request=request)
         sig1.apply_async.assert_called_with(
-            (4,), parent_id='id-1', root_id='root',
+            (4,), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None
         )
         sig2.apply_async.assert_called_with(
-            (4,), parent_id='id-1', root_id='root',
+            (4,), anchor_id=None, parent_id='id-1', root_id='root',
+            source_id=None
         )
 
     def test_trace_SystemExit(self):
