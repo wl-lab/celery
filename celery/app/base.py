@@ -740,9 +740,8 @@ class Celery(object):
         if source_id:
             options['queue'] = "source-%s" % source_id
 
-                if conf.task_inherit_parent_priority:
-                    options.setdefault('priority',
-                                       parent.request.delivery_info.get('priority'))
+            if conf.task_inherit_parent_priority:
+                options.setdefault('priority', parent.request.delivery_info.get('priority'))
 
         message = amqp.create_task_message(
             task_id, name, args, kwargs, countdown, eta, group_id,
