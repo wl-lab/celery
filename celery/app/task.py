@@ -94,6 +94,7 @@ class Context(object):
     errbacks = None
     timelimit = None
     origin = None
+    task_name = None
     _children = None   # see property
     _protected = 0
 
