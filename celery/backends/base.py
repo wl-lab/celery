@@ -8,10 +8,10 @@
 """
 from __future__ import absolute_import, unicode_literals
 
+import datetime
 import sys
 import time
 from collections import namedtuple
-from datetime import timedelta
 from functools import partial
 from weakref import WeakValueDictionary
 
@@ -25,7 +25,7 @@ import celery.exceptions
 from celery import current_app, group, maybe_signature, states
 from celery._state import get_current_task
 from celery.exceptions import (ChordError, ImproperlyConfigured,
-                               TaskRevokedError, TimeoutError)
+                               NotRegistered, TaskRevokedError, TimeoutError)
 from celery.five import PY3, items
 from celery.result import (GroupResult, ResultBase, allow_join_result,
                            result_from_tuple)
@@ -70,14 +70,13 @@ def unpickle_backend(cls, args, kwargs):
 
 
 class _nulldict(dict):
-
     def ignore(self, *a, **kw):
         pass
+
     __setitem__ = update = setdefault = ignore
 
 
 class Backend(object):
-
     READY_STATES = states.READY_STATES
     UNREADY_STATES = states.UNREADY_STATES
     EXCEPTION_STATES = states.EXCEPTION_STATES
@@ -120,8 +119,12 @@ class Backend(object):
         self._cache = _nulldict() if cmax == -1 else LRUCache(limit=cmax)
 
         self.expires = self.prepare_expires(expires, expires_type)
-        self.accept = prepare_accept_content(
-            conf.accept_content if accept is None else accept)
+
+        # precedence: accept, conf.result_accept_content, conf.accept_content
+        self.accept = conf.result_accept_content if accept is None else accept
+        self.accept = conf.accept_content if self.accept is None else self.accept  # noqa: E501
+        self.accept = prepare_accept_content(self.accept)
+
         self._pending_results = pending_results_t({}, WeakValueDictionary())
         self._pending_messages = BufferMap(MESSAGE_BUFFER_MAX)
         self.url = url
@@ -165,15 +168,33 @@ class Backend(object):
         old_signature = []
         for errback in request.errbacks:
             errback = self.app.signature(errback)
-            if (
-                # workaround to support tasks with bind=True executed as
-                # link errors. Otherwise retries can't be used
-                not isinstance(errback.type.__header__, partial) and
-                arity_greater(errback.type.__header__, 1)
-            ):
-                errback(request, exc, traceback)
-            else:
+            if not errback._app:
+                # Ensure all signatures have an application
+                errback._app = self.app
+            try:
+                if (
+                        # Celery tasks type created with the @task decorator have
+                        # the __header__ property, but Celery task created from
+                        # Task class do not have this property.
+                        # That's why we have to check if this property exists
+                        # before checking is it partial function.
+                        hasattr(errback.type, '__header__') and
+
+                        # workaround to support tasks with bind=True executed as
+                        # link errors. Otherwise retries can't be used
+                        not isinstance(errback.type.__header__, partial) and
+                        arity_greater(errback.type.__header__, 1)
+                ):
+                    errback(request, exc, traceback)
+                else:
+                    old_signature.append(errback)
+            except NotRegistered:
+                # Task may not be present in this worker.
+                # We simply send it forward for another worker to consume.
+                # If the task is not registered there, the worker will raise
+                # NotRegistered.
                 old_signature.append(errback)
+
         if old_signature:
             # Previously errback was called as a task so we still
             # need to do so if the errback only takes a single task_id arg.
@@ -225,9 +246,9 @@ class Backend(object):
         type_, real_exc, tb = sys.exc_info()
         try:
             exc = real_exc if exc is None else exc
-            ei = ExceptionInfo((type_, exc, tb))
-            self.mark_as_failure(task_id, exc, ei.traceback)
-            return ei
+            exception_info = ExceptionInfo((type_, exc, tb))
+            self.mark_as_failure(task_id, exc, exception_info.traceback)
+            return exception_info
         finally:
             del tb
 
@@ -293,7 +314,7 @@ class Backend(object):
     def prepare_expires(self, value, type=None):
         if value is None:
             value = self.app.conf.result_expires
-        if isinstance(value, timedelta):
+        if isinstance(value, datetime.timedelta):
             value = value.total_seconds()
         if value is not None and type:
             return type(value)
@@ -302,14 +323,13 @@ class Backend(object):
     def prepare_persistent(self, enabled=None):
         if enabled is not None:
             return enabled
-        p = self.app.conf.result_persistent
-        return self.persistent if p is None else p
+        persistent = self.app.conf.result_persistent
+        return self.persistent if persistent is None else persistent
 
     def encode_result(self, result, state):
         if state in self.EXCEPTION_STATES and isinstance(result, Exception):
             return self.prepare_exception(result)
-        else:
-            return self.prepare_value(result)
+        return self.prepare_value(result)
 
     def is_cached(self, task_id):
         return task_id in self._cache
@@ -332,6 +352,7 @@ class Backend(object):
     def get_state(self, task_id):
         """Get the state of a task."""
         return self.get_task_meta(task_id)['status']
+
     get_status = get_state  # XXX compat
 
     def get_traceback(self, task_id):
@@ -448,7 +469,6 @@ class Backend(object):
 
 
 class SyncBackendMixin(object):
-
     def iter_native(self, result, timeout=None, interval=0.5, no_ack=True,
                     on_message=None, on_interval=None):
         self._ensure_not_eager()
@@ -593,11 +613,11 @@ class BaseKeyValueStoreBackend(Backend):
         return bytes_to_str(key)
 
     def _filter_ready(self, values, READY_STATES=states.READY_STATES):
-        for k, v in values:
-            if v is not None:
-                v = self.decode_result(v)
-                if v['status'] in READY_STATES:
-                    yield k, v
+        for k, value in values:
+            if value is not None:
+                value = self.decode_result(value)
+                if value['status'] in READY_STATES:
+                    yield k, value
 
     def _mget_to_results(self, values, keys):
         if hasattr(values, 'items'):
@@ -656,11 +676,41 @@ class BaseKeyValueStoreBackend(Backend):
 
     def _store_result(self, task_id, result, state,
                       traceback=None, request=None, **kwargs):
+
+        if state in self.READY_STATES:
+            date_done = datetime.datetime.utcnow()
+        else:
+            date_done = None
+
         meta = {
-            'status': state, 'result': result, 'traceback': traceback,
+            'status': state,
+            'result': result,
+            'traceback': traceback,
             'children': self.current_task_children(request),
             'task_id': bytes_to_str(task_id),
+            'date_done': date_done,
         }
+
+        if request and getattr(request, 'group', None):
+            meta['group_id'] = request.group
+        if request and getattr(request, 'parent_id', None):
+            meta['parent_id'] = request.parent_id
+
+        if self.app.conf.find_value_for_key('extended', 'result'):
+            if request:
+                request_meta = {
+                    'name': getattr(request, 'task_name', None),
+                    'args': getattr(request, 'args', None),
+                    'kwargs': getattr(request, 'kwargs', None),
+                    'worker': getattr(request, 'hostname', None),
+                    'retries': getattr(request, 'retries', None),
+                    'queue': request.delivery_info.get('routing_key')
+                    if hasattr(request, 'delivery_info') and
+                    request.delivery_info else None
+                }
+
+                meta.update(request_meta)
+
         self.set(self.get_key_for_task(task_id), self.encode(meta))
         return result
 
@@ -767,7 +817,7 @@ class KeyValueStoreBackend(BaseKeyValueStoreBackend, SyncBackendMixin):
 class DisabledBackend(BaseBackend):
     """Dummy result backend."""
 
-    _cache = {}   # need this attribute to reset cache in tests.
+    _cache = {}  # need this attribute to reset cache in tests.
 
     def store_result(self, *args, **kwargs):
         pass

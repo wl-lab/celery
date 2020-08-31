@@ -197,21 +197,37 @@ class test_trace_task(RequestCase):
 
 class test_Request(RequestCase):
 
-    def get_request(self, sig, Request=Request, **kwargs):
+    def get_request(self,
+                    sig,
+                    Request=Request,
+                    exclude_headers=None,
+                    **kwargs):
+        msg = self.task_message_from_sig(self.app, sig)
+        headers = None
+        if exclude_headers:
+            headers = msg.headers
+            for header in exclude_headers:
+                headers.pop(header)
         return Request(
-            self.task_message_from_sig(self.app, sig),
+            msg,
             on_ack=Mock(name='on_ack'),
             on_reject=Mock(name='on_reject'),
             eventer=Mock(name='eventer'),
             app=self.app,
             connection_errors=(socket.error,),
             task=sig.type,
+            headers=headers,
             **kwargs
         )
 
     def test_shadow(self):
         assert self.get_request(
             self.add.s(2, 2).set(shadow='fooxyz')).name == 'fooxyz'
+
+    def test_no_shadow_header(self):
+        request = self.get_request(self.add.s(2, 2),
+                                   exclude_headers=['shadow'])
+        assert request.name == 't.unit.worker.test_request.add'
 
     def test_invalid_eta_raises_InvalidTaskError(self):
         with pytest.raises(InvalidTaskError):
@@ -237,7 +253,7 @@ class test_Request(RequestCase):
         req.on_retry(Mock())
         req.on_ack.assert_called_with(req_logger, req.connection_errors)
 
-    def test_on_failure_Termianted(self):
+    def test_on_failure_Terminated(self):
         einfo = None
         try:
             raise Terminated('9')
@@ -394,7 +410,7 @@ class test_Request(RequestCase):
         job = self.get_request(self.mytask.s(1, f='x'))
         job._apply_result = Mock(name='_apply_result')
         with self.assert_signal_called(
-                task_revoked, sender=job.task, request=job,
+                task_revoked, sender=job.task, request=job._context,
                 terminated=True, expired=False, signum=signum):
             job.time_start = monotonic()
             job.worker_pid = 314
@@ -410,7 +426,7 @@ class test_Request(RequestCase):
         signum = signal.SIGTERM
         job = self.get_request(self.mytask.s(1, f='x'))
         with self.assert_signal_called(
-                task_revoked, sender=job.task, request=job,
+                task_revoked, sender=job.task, request=job._context,
                 terminated=True, expired=False, signum=signum):
             job.time_start = monotonic()
             job.worker_pid = 313
@@ -431,10 +447,11 @@ class test_Request(RequestCase):
             expires=datetime.utcnow() - timedelta(days=1)
         ))
         with self.assert_signal_called(
-                task_revoked, sender=job.task, request=job,
+                task_revoked, sender=job.task, request=job._context,
                 terminated=False, expired=True, signum=None):
             job.revoked()
             assert job.id in revoked
+            self.app.set_current()
             assert self.mytask.backend.get_status(job.id) == states.REVOKED
 
     def test_revoked_expires_not_expired(self):
@@ -462,7 +479,7 @@ class test_Request(RequestCase):
     def test_revoked(self):
         job = self.xRequest()
         with self.assert_signal_called(
-                task_revoked, sender=job.task, request=job,
+                task_revoked, sender=job.task, request=job._context,
                 terminated=False, expired=False, signum=None):
             revoked.add(job.id)
             assert job.revoked()
@@ -511,7 +528,7 @@ class test_Request(RequestCase):
         pool = Mock()
         job = self.xRequest()
         with self.assert_signal_called(
-                task_revoked, sender=job.task, request=job,
+                task_revoked, sender=job.task, request=job._context,
                 terminated=True, expired=False, signum=signum):
             job.terminate(pool, signal='TERM')
             assert not pool.terminate_job.call_count
@@ -581,6 +598,7 @@ class test_Request(RequestCase):
         job = self.xRequest()
         exc_info = get_ei()
         job.on_failure(exc_info)
+        self.app.set_current()
         assert self.mytask.backend.get_status(job.id) == states.FAILURE
 
         self.mytask.ignore_result = True
@@ -598,7 +616,57 @@ class test_Request(RequestCase):
         except KeyError:
             exc_info = ExceptionInfo()
             job.on_failure(exc_info)
-            assert job.acknowledged
+        assert job.acknowledged
+
+    def test_on_failure_acks_on_failure_or_timeout_disabled_for_task(self):
+        job = self.xRequest()
+        job.time_start = 1
+        self.mytask.acks_late = True
+        self.mytask.acks_on_failure_or_timeout = False
+        try:
+            raise KeyError('foo')
+        except KeyError:
+            exc_info = ExceptionInfo()
+            job.on_failure(exc_info)
+        assert job.acknowledged is False
+
+    def test_on_failure_acks_on_failure_or_timeout_enabled_for_task(self):
+        job = self.xRequest()
+        job.time_start = 1
+        self.mytask.acks_late = True
+        self.mytask.acks_on_failure_or_timeout = True
+        try:
+            raise KeyError('foo')
+        except KeyError:
+            exc_info = ExceptionInfo()
+            job.on_failure(exc_info)
+        assert job.acknowledged is True
+
+    def test_on_failure_acks_on_failure_or_timeout_disabled(self):
+        self.app.conf.acks_on_failure_or_timeout = False
+        job = self.xRequest()
+        job.time_start = 1
+        self.mytask.acks_late = True
+        self.mytask.acks_on_failure_or_timeout = False
+        try:
+            raise KeyError('foo')
+        except KeyError:
+            exc_info = ExceptionInfo()
+            job.on_failure(exc_info)
+        assert job.acknowledged is False
+        self.app.conf.acks_on_failure_or_timeout = True
+
+    def test_on_failure_acks_on_failure_or_timeout_enabled(self):
+        self.app.conf.acks_on_failure_or_timeout = True
+        job = self.xRequest()
+        job.time_start = 1
+        self.mytask.acks_late = True
+        try:
+            raise KeyError('foo')
+        except KeyError:
+            exc_info = ExceptionInfo()
+            job.on_failure(exc_info)
+        assert job.acknowledged is True
 
     def test_from_message_invalid_kwargs(self):
         m = self.TaskMessage(self.mytask.name, args=(), kwargs='foo')
@@ -606,7 +674,7 @@ class test_Request(RequestCase):
         with pytest.raises(InvalidTaskError):
             raise req.execute().exception
 
-    def test_on_hard_timeout(self, patching):
+    def test_on_hard_timeout_acks_late(self, patching):
         error = patching('celery.worker.request.error')
 
         job = self.xRequest()
@@ -620,6 +688,34 @@ class test_Request(RequestCase):
         job = self.xRequest()
         job.acknowledge = Mock(name='ack')
         job.task.acks_late = False
+        job.on_timeout(soft=False, timeout=1335)
+        job.acknowledge.assert_not_called()
+
+    def test_on_hard_timeout_acks_on_failure_or_timeout(self, patching):
+        error = patching('celery.worker.request.error')
+
+        job = self.xRequest()
+        job.acknowledge = Mock(name='ack')
+        job.task.acks_late = True
+        job.task.acks_on_failure_or_timeout = True
+        job.on_timeout(soft=False, timeout=1337)
+        assert 'Hard time limit' in error.call_args[0][0]
+        assert self.mytask.backend.get_status(job.id) == states.FAILURE
+        job.acknowledge.assert_called_with()
+
+        job = self.xRequest()
+        job.acknowledge = Mock(name='ack')
+        job.task.acks_late = True
+        job.task.acks_on_failure_or_timeout = False
+        job.on_timeout(soft=False, timeout=1337)
+        assert 'Hard time limit' in error.call_args[0][0]
+        assert self.mytask.backend.get_status(job.id) == states.FAILURE
+        job.acknowledge.assert_not_called()
+
+        job = self.xRequest()
+        job.acknowledge = Mock(name='ack')
+        job.task.acks_late = False
+        job.task.acks_on_failure_or_timeout = True
         job.on_timeout(soft=False, timeout=1335)
         job.acknowledge.assert_not_called()
 
@@ -875,7 +971,7 @@ class test_Request(RequestCase):
         exc = WorkerLostError()
         job = self._test_on_failure(exc)
         job.task.backend.mark_as_failure.assert_called_with(
-            job.id, exc, request=job, store_result=True,
+            job.id, exc, request=job._context, store_result=True,
         )
 
     def test_on_failure__return_ok(self):
