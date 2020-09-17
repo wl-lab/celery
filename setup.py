@@ -50,31 +50,38 @@ elif PY33_OR_LESS and not PYPY24_ATLEAST:
 # -*- Extras -*-
 
 EXTENSIONS = {
+    'arangodb',
     'auth',
+    'azureblockblob',
+    'brotli',
     'cassandra',
-    'django',
-    'elasticsearch',
-    'memcache',
-    'pymemcache',
+    'consul',
+    'cosmosdbsql',
     'couchbase',
+    'couchdb',
+    'django',
+    'dynamodb',
+    'elasticsearch',
     'eventlet',
     'gevent',
+    'librabbitmq',
+    'lzma',
+    'memcache',
+    'mongodb',
     'msgpack',
-    'yaml',
+    'pymemcache',
+    'pyro',
     'redis',
-    'sqs',
-    'couchdb',
     'riak',
-    'zookeeper',
+    's3',
+    'slmq',
     'solar',
     'sqlalchemy',
-    'librabbitmq',
-    'pyro',
-    'slmq',
+    'sqs',
     'tblib',
-    'consul',
-    'dynamodb',
-    'mongodb',
+    'yaml',
+    'zookeeper',
+    'zstd'
 }
 
 # -*- Classifiers -*-
@@ -91,6 +98,7 @@ classes = """
     Programming Language :: Python :: 3.4
     Programming Language :: Python :: 3.5
     Programming Language :: Python :: 3.6
+    Programming Language :: Python :: 3.7
     Programming Language :: Python :: Implementation :: CPython
     Programming Language :: Python :: Implementation :: PyPy
     Operating System :: OS Independent
@@ -176,6 +184,7 @@ def extras_require():
 
 # -*- Long Description -*-
 
+
 def long_description():
     try:
         return codecs.open('README.rst', 'r', 'utf-8').read()
@@ -183,6 +192,7 @@ def long_description():
         return 'Long description error: Missing README.rst file'
 
 # -*- Command: setup.py test -*-
+
 
 class pytest(setuptools.command.test.test):
     user_options = [('pytest-args=', 'a', 'Arguments to pass to py.test')]
@@ -196,6 +206,7 @@ class pytest(setuptools.command.test.test):
         sys.exit(_pytest.main(self.pytest_args))
 
 # -*- %%% -*-
+
 
 meta = parse_dist_meta()
 setuptools.setup(
